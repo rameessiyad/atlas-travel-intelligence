@@ -1,4 +1,4 @@
-import { parseItinerary } from "@/lib/parseItinerary";
+import { parseItinerary } from "@/lib/api/parseItinerary";
 
 export default function ItineraryView({ text }: { text: string }) {
   const sections = parseItinerary(text);
