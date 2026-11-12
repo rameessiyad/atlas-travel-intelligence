@@ -8,6 +8,7 @@ ADAPTER_PATH = os.getenv("ATLAS_LORA_ADAPTER", "models/atlas-lora")
 _tokenizer = None
 _model = None
 
+
 def load_model():
     global _tokenizer, _model
     if _model is not None:
@@ -25,6 +26,7 @@ def load_model():
     _model = model
     return _tokenizer, _model
 
+
 SYSTEM_PROMPT = (
     "You are Atlas, a practical travel-planning assistant. "
     "Use the supplied travel notes for facts about places. "
@@ -34,15 +36,22 @@ SYSTEM_PROMPT = (
     "matching the traveller's interests, budget and pace."
 )
 
-def answer_with_qwen(request: str, notes: list[dict]) -> str:
+REVISE_PROMPT = (
+    SYSTEM_PROMPT
+    + " You will be given an existing itinerary and a requested change. "
+    "Apply only the requested change and keep the traveller's original "
+    "destination, number of days, budget, interests and pace. "
+    "Return the full updated itinerary."
+)
+
+
+def _format_notes(notes: list[dict]) -> str:
+    return "\n".join(f"- [{n['id']}] {n['text']}" for n in notes) \
+        or "No matching travel notes were found."
+
+
+def _generate(messages: list[dict]) -> str:
     tokenizer, model = load_model()
-    context = "\n".join(
-        f"- [{n['id']}] {n['text']}" for n in notes
-    ) or "No matching travel notes were found."
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Travel request: {request}\n\nTravel notes:\n{context}"},
-    ]
     prompt = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
@@ -54,3 +63,23 @@ def answer_with_qwen(request: str, notes: list[dict]) -> str:
         )
     new_tokens = output[0][inputs["input_ids"].shape[-1]:]
     return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+
+
+def answer_with_qwen(request: str, notes: list[dict]) -> str:
+    return _generate([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user",
+         "content": f"Travel request: {request}\n\nTravel notes:\n{_format_notes(notes)}"},
+    ])
+
+
+def revise_with_qwen(request: str, itinerary: str, change: str, notes: list[dict]) -> str:
+    return _generate([
+        {"role": "system", "content": REVISE_PROMPT},
+        {"role": "user", "content": (
+            f"Original request: {request}\n\n"
+            f"Travel notes:\n{_format_notes(notes)}\n\n"
+            f"Current itinerary:\n{itinerary}\n\n"
+            f"Requested change: {change}"
+        )},
+    ])
