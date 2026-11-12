@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 from rag import retrieve_travel_notes
+from model import answer_with_qwen
 
 app = FastAPI(title="Atlas Travel AI")
 
@@ -11,10 +14,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+class TripRequest(BaseModel):
+    destination: str
+    days: int = 3
+    budget: str = ""
+    interests: str = ""
+    pace: str = "Balanced"
+    extra: str = ""
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "Atlas"}
 
+
 @app.get("/retrieve")
 def retrieve(q: str, limit: int = 4):
     return {"query": q, "results": retrieve_travel_notes(q, limit)}
+
+
+@app.post("/itinerary")
+def itinerary(req: TripRequest):
+    request = (
+        f"Create a {req.days}-day itinerary for {req.destination}. "
+        f"Budget: {req.budget or 'not specified'}. "
+        f"Interests: {req.interests or 'not specified'}. "
+        f"Pace: {req.pace}. Extra preferences: {req.extra or 'none'}."
+    )
+    notes = retrieve_travel_notes(f"{req.destination} {req.interests}", limit=4)
+    answer = answer_with_qwen(request, notes)
+    return {
+        "itinerary": answer,
+        "sources": [
+            {"id": n["id"], "place": n["place_name"], "source": n["source"]}
+            for n in notes
+        ],
+    }
